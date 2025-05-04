@@ -32,11 +32,32 @@ pub fn fuel_required(mass: u64) -> u64 {
     first - 2
 }
 
+/// Implements all operations necessary for part1
+///
+/// # Arguments
+///
+/// * filename - path of file containing input
+///
+/// # Returns
+///
+/// * Answer
+///
 pub fn part1(filename: &str) -> u64 {
     let lines: Vec<String> = shared::ingest_file(filename);
     lines.iter().map(parse_line).map(fuel_required).sum()
 }
 
+/// Recursively finds total fuel mass considering the mass of fuel
+/// 
+/// # Arguments
+///
+/// * total - accumulator of total fuel mass
+/// * mass - either previously found fuel mass or initial module mass
+///
+/// # Returns
+///
+/// * Total fuel mass
+///
 pub fn recursive_fuel_required(total: u64, mass: u64) -> u64 {
     let fuel_mass = fuel_required(mass);
     if fuel_mass == 0 {
@@ -45,6 +66,16 @@ pub fn recursive_fuel_required(total: u64, mass: u64) -> u64 {
     recursive_fuel_required(total + fuel_mass, fuel_mass)
 }
 
+/// Implements all operations necessary for part2
+///
+/// # Arguments
+///
+/// * filename - path of file containing input
+///
+/// # Returns
+///
+/// * Answer
+///
 pub fn part2(filename: &str) -> u64 {
     let lines: Vec<String> = shared::ingest_file(filename);
     lines.iter().map(parse_line).map(|mass| recursive_fuel_required(0, mass)).sum()
