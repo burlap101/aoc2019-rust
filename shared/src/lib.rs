@@ -17,7 +17,7 @@ pub fn add(left: u64, right: u64) -> u64 {
 pub fn ingest_file(filename: &str) -> Vec<String> {
     let bytes = fs::read(filename).unwrap();
     let s = String::from_utf8(bytes).unwrap();
-    s.split('\n')
+    s.lines()
         .map(|x| x.trim())
         .map(String::from)
         .filter(|x| !x.is_empty())
