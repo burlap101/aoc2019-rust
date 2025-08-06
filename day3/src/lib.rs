@@ -1,135 +1,469 @@
-use std::str::FromStr;
-use std::cmp;
+use std::collections::HashMap;
+use std::fmt::Display;
 
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
-
-#[derive(Debug, PartialEq)]
-pub enum Orientation {
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+enum Direction {
     Up,
     Down,
     Left,
     Right,
 }
 
-impl FromStr for Orientation {
-    type Err = ();
+impl Display for Direction {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ch = match self {
+            Direction::Up => 'U',
+            Direction::Down => 'D',
+            Direction::Left => 'L',
+            Direction::Right => 'R',
+        };
+        write!(f, "{}", ch)
+    }
+}
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "U" => Ok(Orientation::Up),
-            "D" => Ok(Orientation::Down),
-            "L" => Ok(Orientation::Left),
-            "R" => Ok(Orientation::Right),
-            _ => Err(()),
-        }
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
+struct Coord {
+    x: i64,
+    y: i64,
+}
+
+impl Display for Coord {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "({}, {})", self.x, self.y)
     }
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Direction {
-    orientation: Orientation,
-    distance: u64,
+enum Orientation {
+    Horizontal,
+    Vertical,
 }
 
-impl Direction {
-    fn new(input: &str) -> Direction {
-        let mut ch_iter = input.chars();
-        let orientation = ch_iter.next().unwrap().to_string().parse::<Orientation>().unwrap();
-        let distance = ch_iter.next().unwrap().to_string().parse::<u64>().unwrap();
-        Direction {
-            orientation,
-            distance
+impl Display for Orientation {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            if *self == Orientation::Vertical {
+                "Vertical"
+            } else {
+                "Horizontal"
+            }
+        )
+    }
+}
+
+#[derive(Debug, PartialEq, PartialOrd, Eq, Ord, Copy, Clone)]
+struct CornerPair(Coord, Coord);
+
+impl Display for CornerPair {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[{},{}]", self.0, self.1)
+    }
+}
+
+impl CornerPair {
+    /// Determines the intersecting point of two intervals
+    ///
+    /// # Arguments
+    ///
+    /// * other - the other CornerPair to compare against
+    ///
+    /// # Returns
+    ///
+    /// * point of intersection or none
+    fn intersection(&self, other: CornerPair) -> Option<Coord> {
+        match (self.orientation(), other.orientation()) {
+            (Orientation::Horizontal, Orientation::Vertical) => {
+                let (x1, x2) = (self.0.x, self.1.x);
+                let (y1, y2) = (other.0.y, other.1.y);
+                if ((x1.min(x2) + 1)..x1.max(x2)).contains(&other.0.x)
+                    && ((y1.min(y2) + 1)..y1.max(y2)).contains(&self.0.y)
+                {
+                    return Some(Coord {
+                        x: other.0.x,
+                        y: self.0.y,
+                    });
+                }
+                None
+            }
+            (Orientation::Vertical, Orientation::Horizontal) => {
+                let (y1, y2) = (self.0.y, self.1.y);
+                let (x1, x2) = (other.0.x, other.1.x);
+                if ((y1.min(y2) + 1)..y1.max(y2)).contains(&other.0.y)
+                    && ((x1.min(x2) + 1)..x1.max(x2)).contains(&self.0.x)
+                {
+                    return Some(Coord {
+                        x: self.0.x,
+                        y: other.0.y,
+                    });
+                }
+                None
+            }
+            _ => None,
+        }
+    }
+
+    fn orientation(&self) -> Orientation {
+        let CornerPair(c1, c2) = self;
+        if c1.x == c2.x {
+            return Orientation::Vertical;
+        }
+        return Orientation::Horizontal;
+    }
+
+    pub fn on_interval(&self, point: Coord) -> bool {
+        match self.orientation() {
+            Orientation::Vertical => {
+                let miny = self.0.y.min(self.1.y);
+                let maxy = self.0.y.max(self.1.y);
+                self.0.x == point.x && (miny..=maxy).contains(&point.y)
+            }
+            Orientation::Horizontal => {
+                let minx = self.0.x.min(self.1.x);
+                let maxx = self.0.x.max(self.1.x);
+                self.0.y == point.y && (minx..=maxx).contains(&point.x)
+            }
+        }
+    }
+
+    /// Takes a point and returns char representation
+    ///
+    /// # Arguments
+    ///
+    /// * point - location
+    ///
+    /// # Returns
+    ///
+    /// * either - | or +
+    pub fn char_point(&self, point: Coord, curr: Option<char>) -> char {
+        if self.0 == point || self.1 == point {
+            return '+';
+        }
+
+        match (self.on_interval(point), self.orientation(), curr) {
+            (true, Orientation::Vertical, Some('.')) => '|',
+            (true, Orientation::Horizontal, Some('.')) => '=',
+            (true, Orientation::Vertical, None) => '|',
+            (true, Orientation::Horizontal, None) => '=',
+            (false, _, Some(c)) => c,
+            _ => '.',
         }
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Ord, PartialOrd)]
-pub struct Coord {
-    m: i64,
-    n: i64
+#[derive(Debug, PartialEq, PartialOrd, Copy, Clone)]
+struct Command {
+    dir: Direction,
+    count: u32,
 }
 
-impl Coord {
-    fn distance(&self) -> u64 {
-        (self.m.abs() + self.n.abs()) as u64
+impl Display for Command {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}{}", self.dir, self.count)
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Wire {
-    directions: Vec<Direction>
+impl Command {
+    pub fn new(cmd_s: &str) -> Self {
+        let (dir_s, count_s) = cmd_s.split_at(1);
+        let dir = match dir_s {
+            "U" => Direction::Up,
+            "D" => Direction::Down,
+            "L" => Direction::Left,
+            "R" => Direction::Right,
+            _ => {
+                panic!("unknown direction char {}", dir_s)
+            }
+        };
+        let count = count_s.parse::<u32>().unwrap();
+
+        Command { dir, count }
+    }
+
+    /// Returns the coords of all points when carrying out the command
+    ///
+    /// Excludes the start coordinate
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - Starting location
+    ///
+    /// # Returns
+    ///
+    /// iterator of all coords visited, excluding start.
+    pub fn coords(&self, start: Coord) -> Box<dyn Iterator<Item = Coord>> {
+        match self.dir {
+            Direction::Up => Box::new(
+                (start.y + 1..=start.y + self.count as i64).map(move |y| Coord { x: start.x, y }),
+            ),
+
+            Direction::Down => Box::new(
+                (start.y - self.count as i64..start.y)
+                    .rev()
+                    .map(move |y| Coord { x: start.x, y }),
+            ),
+
+            Direction::Left => Box::new(
+                (start.x - self.count as i64..start.x)
+                    .rev()
+                    .map(move |x| Coord { x, y: start.y }),
+            ),
+
+            Direction::Right => Box::new(
+                (start.x + 1..=start.x + self.count as i64).map(move |x| Coord { x, y: start.y }),
+            ),
+        }
+    }
+
+    pub fn last_coord(&self, start: Coord) -> Coord {
+        match self.dir {
+            Direction::Up => {
+                return Coord {
+                    x: start.x,
+                    y: start.y + self.count as i64,
+                };
+            }
+            Direction::Down => {
+                return Coord {
+                    x: start.x,
+                    y: start.y - self.count as i64,
+                };
+            }
+            Direction::Left => {
+                return Coord {
+                    x: start.x - self.count as i64,
+                    y: start.y,
+                };
+            }
+            Direction::Right => {
+                return Coord {
+                    x: start.x + self.count as i64,
+                    y: start.y,
+                };
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, PartialOrd)]
+struct Wire {
+    cmds: Vec<Command>,
 }
 
 impl Wire {
-    fn new(input: String) -> Wire {
-        Wire {
-            directions: input.split(",").map(|x| Direction::new(x)).collect()
-        }
+    pub fn new(cmds_s: &str) -> Self {
+        let dirs = cmds_s.split(',').map(Command::new).collect();
+        Wire { cmds: dirs }
     }
 
-    fn trace(&self) -> impl Iterator<Item = Coord> {
-        let mut cur_pos = Coord { m: 0, n: 0 };
-        let mv = move |dir: &Direction| -> Vec<Coord> {
-            let mut result: Vec<Coord> = Vec::new();
-            match dir.orientation {
-                Orientation::Up => {
-                    let j = cur_pos.n;
-                    for i in cur_pos.m..=(cur_pos.m + dir.distance as i64) {
-                        result.push(Coord {m: i, n: j});
+    /// Takes a collection of cmds and returns all coordinates
+    ///
+    /// # Arguments
+    ///
+    /// * `start` - starting coordinate of the trace.
+    ///
+    /// # Returns
+    ///
+    /// All coordinates visited
+    ///
+    pub fn trace(&self, start: Coord) -> Vec<Coord> {
+        let mut cmd_coords: Vec<Coord> = Vec::new();
+        let mut current = start;
+        for cmd in &self.cmds {
+            let new_coords: Vec<Coord> = cmd.coords(current).collect();
+            cmd_coords.extend(&new_coords);
+            if let Some(last) = new_coords.last() {
+                current = *last;
+            }
+        }
+        cmd_coords
+    }
+
+    /// Takes a collection of cmds and returns all corner coordinates
+    ///
+    /// # Arguments
+    ///
+    /// * start - starting coordinate of the trace.
+    ///
+    /// # Returns
+    ///
+    /// corner coordinates visited
+    ///
+    pub fn trace_corners(&self, start: Coord) -> Vec<CornerPair> {
+        let mut cnr_coords: Vec<CornerPair> = Vec::new();
+        let mut current = start;
+        for cmd in &self.cmds {
+            let new_coord: Coord = cmd.last_coord(current);
+            cnr_coords.push(CornerPair(current, new_coord));
+            current = new_coord;
+        }
+        cnr_coords
+    }
+
+    /// Determines all crossovers with another wire
+    ///
+    /// # Arguments
+    ///
+    /// * other - the wire to compare with
+    ///
+    /// # Returns
+    ///
+    /// all crossover coordinates
+    ///
+    pub fn crossovers(&self, other: &Wire) -> Vec<Coord> {
+        let this_trace_corners: Vec<CornerPair> = self.trace_corners(Coord { x: 0, y: 0 });
+        let other_trace_corners: Vec<CornerPair> = other.trace_corners(Coord { x: 0, y: 0 });
+        let mut all_crossovers: Vec<Coord> = Vec::new();
+        for cpi in this_trace_corners {
+            for cpj in &other_trace_corners {
+                if let Some(coord) = cpi.intersection(*cpj) {
+                    if (cpi.0.y == 0 && cpi.1.y == 0) || (cpj.0.y == 0 && cpj.1.y == 0) {
+                        println!("cpi: {}; cpj: {}; coord: {}", cpi, cpj, coord);
                     }
-                    cur_pos.m += dir.distance as i64;
-                },
-                Orientation::Down => {
-                    let j = cur_pos.n;
-                    for i in ((cur_pos.m - dir.distance as i64)..=cur_pos.m).rev() {
-                        result.push(Coord {m: i, n: j});
-                    }
-                    cur_pos.m -= dir.distance as i64;
-                },
-                Orientation::Left => {
-                    let i = cur_pos.m;
-                    for j in ((cur_pos.n - dir.distance as i64)..=cur_pos.n).rev() {
-                        result.push(Coord {m: i, n: j});
-                    }
-                    cur_pos.n -= dir.distance as i64;
-                },
-                Orientation::Right => {
-                    let i = cur_pos.m;
-                    for j in cur_pos.n..=(cur_pos.n + dir.distance as i64) {
-                        result.push(Coord {m: i, n: j});
-                    }
-                    cur_pos.n += dir.distance as i64;
+                    all_crossovers.push(coord);
                 }
             }
-            result
-        };
-        self.directions.iter().flat_map(mv)
+        }
+        all_crossovers
     }
 }
 
-#[derive(Debug, PartialEq)]
-pub struct Panel {
-    wire_one: Wire,
-    wire_two: Wire
-}
+struct Panel(Wire, Wire);
 
 impl Panel {
-    fn determine_cross_overs(&self) -> impl Iterator<Item = Coord> {
-        let trace_one: Vec<Coord> = self.wire_one.trace().collect();
-        self.wire_two.trace().filter(move |c| trace_one.contains(c) && (c.m != 0 && c.n != 0))
+    fn generate(&self) -> (HashMap<(i64, i64), char>, Coord, Coord) {
+        let mut cnrs: Vec<Coord> = self
+            .0
+            .trace_corners(Coord { x: 0, y: 0 })
+            .iter()
+            .map(|x| vec![x.0, x.1])
+            .flatten()
+            .collect();
+        cnrs.extend(
+            self.1
+                .trace_corners(Coord { x: 0, y: 0 })
+                .iter()
+                .map(|x| vec![x.0, x.1])
+                .flatten(),
+        );
+        let mut min_bounds = Coord { x: 0, y: 0 };
+        let mut max_bounds = Coord { x: 0, y: 0 };
+
+        let crossovers = self.0.crossovers(&self.1);
+
+        // Determine bounds of trace
+        for cnr in cnrs {
+            min_bounds.x = min_bounds.x.min(cnr.x);
+            min_bounds.y = min_bounds.y.min(cnr.y);
+            max_bounds.x = max_bounds.x.max(cnr.x);
+            max_bounds.y = max_bounds.y.max(cnr.y);
+        }
+
+        let mut intervals: Vec<CornerPair> = self.0.trace_corners(Coord { x: 0, y: 0 });
+        intervals.extend(self.1.trace_corners(Coord { x: 0, y: 0 }));
+
+        let mut display: HashMap<(i64, i64), char> = HashMap::new();
+        for i in min_bounds.y..=max_bounds.y {
+            for j in min_bounds.x..=max_bounds.x {
+                let coord = Coord { x: j, y: i };
+                let on_interval = intervals.iter().any(|intvl| intvl.on_interval(coord));
+                let ch = if crossovers.contains(&coord) {
+                    Some('X')
+                } else if on_interval {
+                    Some('5')
+                } else {
+                    Some('.')
+                };
+                match ch {
+                    Some(c) => {
+                        display.insert((j, i), c);
+                    }
+                    None => unreachable!("Found a siuatuion where character wasn't returned"),
+                }
+            }
+        }
+        (display, min_bounds, max_bounds)
+    }
+
+    pub fn generate_from_trace(&self) -> (HashMap<(i64, i64), char>, Coord, Coord) {
+        let mut all_trace: Vec<Coord> = self.1.trace(Coord { x: 0, y: 0 });
+        all_trace.extend(self.0.trace(Coord { x: 0, y: 0 }));
+        let (_, min_bounds, max_bounds) = self.generate();
+        let mut display: HashMap<(i64, i64), char> = HashMap::new();
+        let cos = self.0.crossovers(&self.1);
+        for i in min_bounds.y..=max_bounds.y {
+            for j in min_bounds.x..=max_bounds.x {
+                let cd = Coord { x: j, y: i };
+                let ch = if all_trace.contains(&cd) {
+                    Some('5')
+                } else if cos.contains(&cd) {
+                    Some('X')
+                } else {
+                    Some('.')
+                };
+                match ch {
+                    Some(c) => {
+                        const ORIGIN: Coord = Coord { x: 0, y: 0 };
+                        if cd == ORIGIN {
+                            display.insert((j, i), 'O');
+                        } else {
+                            display.insert((j, i), c);
+                        }
+                    }
+                    None => unreachable!("Found a siuatuion where character wasn't returned"),
+                }
+            }
+        }
+        (display, min_bounds, max_bounds)
+    }
+
+    pub fn print_panel(&self) {
+        let (disp, min_bounds, max_bounds) = self.generate();
+        const COL_WIDTH: usize = 1;
+        let mut first_row = String::from(" ".repeat(6));
+        println!("{} -> {}", min_bounds, max_bounds);
+        for j in min_bounds.x..=max_bounds.x {
+            first_row = format!("{}{:^width$}", first_row, j % 10, width = COL_WIDTH);
+        }
+        let mut lines: Vec<String> = Vec::new();
+        println!("{}", first_row);
+        for i in min_bounds.y..=max_bounds.y {
+            let mut line = String::from(format!("{:>5} ", i));
+            for j in min_bounds.x..=max_bounds.x {
+                let k = (j, i);
+                if let Some(ch) = disp.get(&k) {
+                    line = format!("{}{:^width$}", line, ch, width = COL_WIDTH);
+                } else {
+                    unreachable!("character wasn't generated");
+                }
+            }
+            lines.push(line);
+        }
+        for line in lines.iter().rev() {
+            println!("{}", line)
+        }
+        println!("{}", first_row);
     }
 }
 
 pub fn part1(filename: &str) -> Option<i64> {
-    let lines = shared::ingest_file(filename);
-    let wire_one = Wire::new(lines[0].clone());
-    let wire_two = Wire::new(lines[1].clone());
+    let input = shared::ingest_file(filename);
+    let wire_one = Wire::new(&input[0]);
+    let wire_two = Wire::new(&input[1]);
+    wire_one
+        .crossovers(&wire_two)
+        .into_iter()
+        .map(|c| c.x.abs() + c.y.abs())
+        .min()
+}
 
-    let panel = Panel { wire_one, wire_two };
-
-    panel.determine_cross_overs().map(|co| co.m + co.n).reduce(|acc, v| cmp::min(v, acc))
+pub fn printer(filename: &str) {
+    let input = shared::ingest_file(filename);
+    let wire_one = Wire::new(&input[0]);
+    let wire_two = Wire::new(&input[1]);
+    let panel = Panel(wire_one, wire_two);
+    panel.print_panel();
 }
 
 #[cfg(test)]
@@ -141,160 +475,260 @@ mod tests {
         let actual = part1("src/test.txt").unwrap();
         assert_eq!(actual, 159);
     }
-}
-
-#[cfg(test)]
-mod tests_wire {
-    use super::*;
 
     #[test]
-    fn new_wire_constructed_correctly() {
-        struct TestCase {
-            input: String,
-            expected: Wire,
-        }
-
-        let tests: Vec<TestCase> = vec![
-            TestCase {
-                input: String::from("R8,U5,L5,D3"),
-                expected: Wire { directions: vec![
-                    Direction {
-                        distance: 8,
-                        orientation: Orientation::Right,
-                    },
-                    Direction {
-                        distance: 5,
-                        orientation: Orientation::Up,
-                    },
-                    Direction {
-                        distance: 5,
-                        orientation: Orientation::Left,
-                    },
-                   Direction {
-                        distance: 3,
-                        orientation: Orientation::Down,
-                    },
-                ]},
-            },
-        ];
-
-        for tc in tests {
-            let actual = Wire::new(tc.input);
-            assert_eq!(actual, tc.expected);
-        }
-    }
-
-    #[test]
-    fn trace_up_returns_correctly() {
-        let dir = Direction {
-            distance: 5,
-            orientation: Orientation::Up,
-        };
-        let wire = Wire {
-            directions: vec![dir]
-        };
-        let j = 0;
-        let expected: Vec<Coord> = (0..=5).map(|i| Coord {m: i, n: j }).collect();
-        let result: Vec<Coord> = wire.trace().collect();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn trace_down_returns_correctly() {
-        let dir = Direction {
-            distance: 5,
-            orientation: Orientation::Down,
-        };
-        let wire = Wire {
-            directions: vec![dir]
-        };
-        let expected: Vec<Coord> = {
-            let mut res: Vec<Coord> = Vec::new();
-            let j = 0;
-            for i in (-5..=0).rev() {
-              res.push(Coord {m: i, n: j});  
-            };
-            res
-        };
-        let result: Vec<Coord> = wire.trace().collect();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn trace_left_returns_correctly() {
-        let dir = Direction {
-            distance: 5,
-            orientation: Orientation::Left,
-        };
-        let wire = Wire {
-            directions: vec![dir]
-        };
-        let expected: Vec<Coord> = {
-            let mut res: Vec<Coord> = Vec::new();
-            let i = 0;
-            for j in (-5..=0).rev() {
-              res.push(Coord {m: i, n: j});  
-            };
-            res
-        };
-        let result: Vec<Coord> = wire.trace().collect();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn trace_right_returns_correctly() {
-        let dir = Direction {
-            distance: 5,
-            orientation: Orientation::Right,
-        };
-        let wire = Wire {
-            directions: vec![dir]
-        };
-        let expected: Vec<Coord> = {
-            let mut res: Vec<Coord> = Vec::new();
-            let i = 0;
-            for j in 0..=5 {
-              res.push(Coord {m: i, n: j});  
-            };
-            res
-        };
-        let result: Vec<Coord> = wire.trace().collect();
-        assert_eq!(result, expected);
-    }
-
-    #[test]
-    fn trace_works_with_test_input() {
-        let lines = shared::ingest_file("src/test.txt");
-        let wire_one = Wire::new(lines[0].clone());
-        let trace_one: Vec<Coord> = wire_one.trace().collect();
-        assert_eq!(trace_one, vec![Coord{m: 5, n: 6}])
+    fn part1_works_second_test() {
+        let actual = part1("src/test2.txt").unwrap();
+        assert_eq!(actual, 135);
     }
 }
 
 #[cfg(test)]
-mod tests_panel {
+mod test_command {
     use super::*;
 
     #[test]
-    fn determine_cross_overs_works() {
-        let wire_one = Wire::new(String::from("R8,U5,L5,D3"));
-        let wire_two = Wire::new(String::from("U7,R6,D4,L4"));
+    fn command_constructor_works() {
+        let input = "U32";
+        let expected = Command {
+            dir: Direction::Up,
+            count: 32,
+        };
+        let actual = Command::new(input);
 
-        let expected = vec![Coord {m: 5, n: 6}, Coord {m: 3, n: 3}];
-
-        let panel = Panel {wire_one, wire_two};
-        let actual: Vec<Coord> = panel.determine_cross_overs().collect();
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn determine_cross_overs_with_test_data() {
-        let lines = shared::ingest_file("src/test.txt");
-        let wire_one = Wire::new(lines[0].clone());
-        let wire_two = Wire::new(lines[1].clone());
-    
-        let panel = Panel { wire_one, wire_two };
-        let distances: Vec<u64> = panel.determine_cross_overs().map(|co| co.distance()).collect();
-        assert_eq!(distances, vec![0]);
+    fn coords_up_works() {
+        let input = Command {
+            dir: Direction::Up,
+            count: 10,
+        };
+        let mut expected: Vec<Coord> = Vec::new();
+        for i in 1..=10 {
+            expected.push(Coord { x: 5, y: 5 + i });
+        }
+        let actual: Vec<Coord> = input.coords(Coord { x: 5, y: 5 }).collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn coords_down_works() {
+        let input = Command {
+            dir: Direction::Down,
+            count: 10,
+        };
+        let mut expected: Vec<Coord> = Vec::new();
+        for i in 1..=10 {
+            expected.push(Coord { x: 5, y: 5 - i });
+        }
+        let mut actual: Vec<Coord> = input.coords(Coord { x: 5, y: 5 }).collect();
+        assert_eq!(actual.sort(), expected.sort());
+    }
+
+    #[test]
+    fn coords_right_works() {
+        let input = Command {
+            dir: Direction::Right,
+            count: 10,
+        };
+        let mut expected: Vec<Coord> = Vec::new();
+        for i in 1..=10 {
+            expected.push(Coord { y: 5, x: 5 + i });
+        }
+        let actual: Vec<Coord> = input.coords(Coord { x: 5, y: 5 }).collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn coords_left_works() {
+        let input = Command {
+            dir: Direction::Left,
+            count: 10,
+        };
+        let mut expected: Vec<Coord> = Vec::new();
+        for i in 1..=10 {
+            expected.push(Coord { y: 5, x: 5 - i });
+        }
+        let mut actual: Vec<Coord> = input.coords(Coord { x: 5, y: 5 }).collect();
+        assert_eq!(actual.sort(), expected.sort());
+    }
+}
+
+#[cfg(test)]
+mod test_wire {
+    use super::*;
+
+    #[test]
+    fn wire_constructor_works() {
+        let input = "U32,D15,L16,R240";
+        let expected = Wire {
+            cmds: vec![
+                Command {
+                    dir: Direction::Up,
+                    count: 32,
+                },
+                Command {
+                    dir: Direction::Down,
+                    count: 15,
+                },
+                Command {
+                    dir: Direction::Left,
+                    count: 16,
+                },
+                Command {
+                    dir: Direction::Right,
+                    count: 240,
+                },
+            ],
+        };
+
+        let actual = Wire::new(input);
+        assert_eq!(actual, expected)
+    }
+
+    #[test]
+    fn trace_works() {
+        let input: Wire = Wire {
+            cmds: vec![
+                Command {
+                    dir: Direction::Up,
+                    count: 7,
+                },
+                Command {
+                    dir: Direction::Left,
+                    count: 3,
+                },
+            ],
+        };
+        let mut expected: Vec<Coord> = vec![
+            Coord { x: 0, y: 1 },
+            Coord { x: 0, y: 2 },
+            Coord { x: 0, y: 3 },
+            Coord { x: 0, y: 4 },
+            Coord { x: 0, y: 5 },
+            Coord { x: 0, y: 6 },
+            Coord { x: 0, y: 7 },
+            Coord { x: -1, y: 7 },
+            Coord { x: -2, y: 7 },
+            Coord { x: -3, y: 7 },
+        ];
+
+        let mut actual = input.trace(Coord { x: 0, y: 0 });
+
+        assert_eq!(actual.sort(), expected.sort())
+    }
+
+    #[test]
+    fn crossovers_works() {
+        let wire_one = Wire {
+            cmds: vec![
+                Command {
+                    dir: Direction::Up,
+                    count: 7,
+                },
+                Command {
+                    dir: Direction::Left,
+                    count: 3,
+                },
+            ],
+        };
+        let wire_two = Wire {
+            cmds: vec![
+                Command {
+                    dir: Direction::Left,
+                    count: 2,
+                },
+                Command {
+                    dir: Direction::Up,
+                    count: 8,
+                },
+            ],
+        };
+        let expected: Vec<Coord> = vec![Coord { x: -2, y: 7 }];
+        let actual: Vec<Coord> = wire_one.crossovers(&wire_two);
+
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn trace_corners_works() {
+        let input: Wire = Wire {
+            cmds: vec![
+                Command {
+                    dir: Direction::Up,
+                    count: 7,
+                },
+                Command {
+                    dir: Direction::Left,
+                    count: 3,
+                },
+                Command {
+                    dir: Direction::Down,
+                    count: 14,
+                },
+            ],
+        };
+        let mut expected = vec![
+            Coord { x: 0, y: 7 },
+            Coord { x: 3, y: 7 },
+            Coord { x: 3, y: -7 },
+        ];
+
+        let mut actual = input.trace_corners(Coord { x: 0, y: 0 });
+        assert_eq!(actual.sort(), expected.sort());
+    }
+
+    #[test]
+    fn trace_corners_works_test_input() {
+        let input = shared::ingest_file("src/test.txt");
+        let wire_one = Wire::new(&input[0]);
+        let actual = wire_one.trace_corners(Coord { x: 0, y: 0 });
+        let expected = vec![
+            CornerPair(Coord { x: 0, y: 0 }, Coord { x: 75, y: 0 }),
+            CornerPair(Coord { x: 75, y: 0 }, Coord { x: 75, y: -30 }),
+            CornerPair(Coord { x: 75, y: -30 }, Coord { x: 158, y: -30 }),
+            CornerPair(Coord { x: 158, y: -30 }, Coord { x: 158, y: 53 }),
+            CornerPair(Coord { x: 158, y: 53 }, Coord { x: 146, y: 53 }),
+            CornerPair(Coord { x: 146, y: 53 }, Coord { x: 146, y: 4 }),
+            CornerPair(Coord { x: 146, y: 4 }, Coord { x: 217, y: 4 }),
+            CornerPair(Coord { x: 217, y: 4 }, Coord { x: 217, y: 11 }),
+            CornerPair(Coord { x: 217, y: 11 }, Coord { x: 145, y: 11 }),
+        ];
+        assert_eq!(actual.len(), 9);
+        for (p1, p2) in actual.into_iter().zip(expected) {
+            assert_eq!(p1, p2);
+        }
+    }
+}
+
+#[cfg(test)]
+mod test_corner_pair {
+    use super::*;
+
+    #[test]
+    fn orientation_works() {
+        let pair = CornerPair(Coord { x: 0, y: 0 }, Coord { x: 0, y: 7 });
+        assert_eq!(pair.orientation(), Orientation::Vertical)
+    }
+
+    #[test]
+    fn intersection_works_actual() {
+        let first = CornerPair(Coord { x: 5, y: -7 }, Coord { x: -10, y: -7 });
+        let second = CornerPair(Coord { x: -3, y: 3 }, Coord { x: -3, y: -10 });
+        let expected = Coord { x: -3, y: -7 };
+        let actual = first.intersection(second);
+
+        assert_eq!(actual, Some(expected));
+    }
+
+    #[test]
+    fn intersection_works_none() {
+        let first = CornerPair(Coord { x: 0, y: 0 }, Coord { x: 75, y: 0 });
+        let second = CornerPair(Coord { x: 66, y: 62 }, Coord { x: 66, y: 117 });
+        let actual = first.intersection(second);
+
+        assert_eq!(actual, None);
     }
 }
