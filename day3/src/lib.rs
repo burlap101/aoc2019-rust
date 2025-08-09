@@ -21,7 +21,7 @@ impl Display for Direction {
     }
 }
 
-#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone)]
+#[derive(Debug, PartialEq, PartialOrd, Ord, Eq, Copy, Clone, Hash)]
 struct Coord {
     x: i64,
     y: i64,
@@ -266,7 +266,6 @@ impl Wire {
     /// # Returns
     ///
     /// All coordinates visited
-    ///
     pub fn trace(&self, start: Coord) -> Vec<Coord> {
         let mut cmd_coords: Vec<Coord> = Vec::new();
         let mut current = start;
@@ -289,7 +288,6 @@ impl Wire {
     /// # Returns
     ///
     /// corner coordinates visited
-    ///
     pub fn trace_corners(&self, start: Coord) -> Vec<CornerPair> {
         let mut cnr_coords: Vec<CornerPair> = Vec::new();
         let mut current = start;
@@ -310,7 +308,6 @@ impl Wire {
     /// # Returns
     ///
     /// all crossover coordinates
-    ///
     pub fn crossovers(&self, other: &Wire) -> Vec<Coord> {
         let this_trace_corners: Vec<CornerPair> = self.trace_corners(Coord { x: 0, y: 0 });
         let other_trace_corners: Vec<CornerPair> = other.trace_corners(Coord { x: 0, y: 0 });
@@ -326,6 +323,38 @@ impl Wire {
             }
         }
         all_crossovers
+    }
+
+    /// Determines the amount of steps taken to reach the given crossover
+    ///
+    /// # Arguments
+    ///
+    /// * other - the wire that crossover occurs with
+    /// * point - the particular crossover to consider
+    ///
+    /// # Returns
+    ///
+    /// steps that it takes the trace to reach that point
+    pub fn steps_to_crossover(&self, other: &Wire, point: Coord) -> Result<u64, String> {
+        if !self.crossovers(other).contains(&point) {
+            return Err(format!("point not a crossover; {}", point));
+        }
+        let mut current = Coord { x: 0, y: 0 };
+        let mut count: u64 = 0;
+        for cmd in &self.cmds {
+            for coord in cmd.coords(current) {
+                count += 1;
+                if coord == (point) {
+                    return Ok(count);
+                }
+            }
+            current = match cmd.coords(current).last() {
+                Some(c) => c,
+                None => unreachable!("a last coordinate wasn't returned"),
+            };
+        }
+        
+        Err(String::from("the crossover was never reached"))
     }
 }
 
@@ -458,6 +487,32 @@ pub fn part1(filename: &str) -> Option<i64> {
         .min()
 }
 
+/// Performs all operations necessary for part2
+///
+/// # Arguments
+///
+/// * filename - name of input file
+///
+/// # Returns
+///
+/// * count of steps taken to crossover if successful, or
+/// * error message
+pub fn part2(filename: &str) -> Result<u64, String> {
+    let input = shared::ingest_file(filename);
+    let wire_one = Wire::new(&input[0]);
+    let wire_two = Wire::new(&input[1]);
+    let crossovers = wire_one.crossovers(&wire_two);
+    let distances_one = crossovers.iter().map(|co| wire_one.steps_to_crossover(&wire_two, *co));
+    let distances_two = crossovers.iter().map(|co| wire_two.steps_to_crossover(&wire_one, *co));
+
+    let res = distances_one.zip(distances_two).map(|(d1, d2)| d1.unwrap() + d2.unwrap()).min();
+    
+    match res {
+        Some(d) => Ok(d),
+        None => Err(String::from("no distance returned"))
+    }
+}
+
 pub fn printer(filename: &str) {
     let input = shared::ingest_file(filename);
     let wire_one = Wire::new(&input[0]);
@@ -480,6 +535,18 @@ mod tests {
     fn part1_works_second_test() {
         let actual = part1("src/test2.txt").unwrap();
         assert_eq!(actual, 135);
+    }
+
+    #[test]
+    fn part2_works() {
+        let actual = part2("src/test.txt").unwrap();
+        assert_eq!(actual, 610)
+    }
+
+    #[test]
+    fn part2_works_second_test() {
+        let actual = part2("src/test2.txt").unwrap();
+        assert_eq!(actual, 410)
     }
 }
 
@@ -531,13 +598,13 @@ mod test_command {
     fn coords_right_works() {
         let input = Command {
             dir: Direction::Right,
-            count: 10,
+            count: 71,
         };
         let mut expected: Vec<Coord> = Vec::new();
-        for i in 1..=10 {
-            expected.push(Coord { y: 5, x: 5 + i });
+        for i in 1..=71 {
+            expected.push(Coord { y: 4, x: 146 + i });
         }
-        let actual: Vec<Coord> = input.coords(Coord { x: 5, y: 5 }).collect();
+        let actual: Vec<Coord> = input.coords(Coord { x: 146, y: 4 }).collect();
         assert_eq!(actual, expected);
     }
 
@@ -700,6 +767,50 @@ mod test_wire {
         for (p1, p2) in actual.into_iter().zip(expected) {
             assert_eq!(p1, p2);
         }
+    }
+
+    #[test]
+    fn steps_to_crossover_works() {
+        let wire_one = Wire {
+            cmds: vec![
+                Command {
+                    dir: Direction::Up,
+                    count: 7,
+                },
+                Command {
+                    dir: Direction::Left,
+                    count: 3,
+                },
+            ],
+        };
+        let wire_two = Wire {
+            cmds: vec![
+                Command {
+                    dir: Direction::Left,
+                    count: 1,
+                },
+                Command {
+                    dir: Direction::Down,
+                    count: 5,
+                },
+                Command {
+                    dir: Direction::Left,
+                    count: 1,
+                },
+                Command {
+                    dir: Direction::Up,
+                    count: 15,
+                },
+            ],
+        };
+        let crossover: Coord = Coord { x: -2, y: 7 };
+        let expected_one: Result<u64, String> = Ok(9);
+        let expected_two: Result<u64, String> = Ok(19);
+        let actual_one = wire_one.steps_to_crossover(&wire_two, crossover);
+        let actual_two = wire_two.steps_to_crossover(&wire_one, crossover);
+
+        assert_eq!(actual_one, expected_one);
+        assert_eq!(actual_two, expected_two);
     }
 }
 

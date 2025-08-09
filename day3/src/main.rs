@@ -1,4 +1,4 @@
-use day3::{part1, printer};
+use day3::{part1, part2};
 
 fn main() {
     match part1("src/input.txt") {
@@ -6,8 +6,15 @@ fn main() {
             println!("Part1: {}", answer);
         }
         None => {
-            eprintln!("Failed to get an answer");
+            eprintln!("Part1: Failed to get an answer");
         }
-    }
-    //printer("src/test.txt");
+    };
+    match part2("src/input.txt") {
+        Ok(answer) => {
+            println!("Part2: {}", answer);
+        }
+        Err(msg) => {
+            eprintln!("Part2: Failed to get an answer with error: {}", msg);
+        }
+    };
 }
